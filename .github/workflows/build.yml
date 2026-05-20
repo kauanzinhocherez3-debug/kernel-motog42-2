@@ -1,0 +1,50 @@
+name: Compilar KernelSU Moto G42 Oficial
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+    - name: Baixar e Descompactar Kernel Oficial da Motorola
+      run: |
+        mkdir -p kernel-source
+        cd kernel-source
+        # Baixa o código direto do link oficial da Motorola que você achou
+        wget https://github.com/MotorolaMobilityLLC/kernel-msm/archive/refs/tags/MMI-T2SE33.73-23-2.tar.gz
+        tar -xf MMI-T2SE33.73-23-2.tar.gz --strip-components=1
+        rm MMI-T2SE33.73-23-2.tar.gz
+
+    - name: Configurar Ferramentas e Clang do Google
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bc build-essential libssl-dev libcrypto++-dev bison flex libelf-dev lld llvm
+        mkdir -p $GITHUB_WORKSPACE/aosp-clang
+        cd $GITHUB_WORKSPACE/aosp-clang
+        wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r450784d.tar.gz
+        tar -xf clang-r450784d.tar.gz
+
+    - name: Injetar KernelSU
+      run: |
+        cd kernel-source
+        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+
+    - name: Compilar Kernel Motorola
+      run: |
+        cd kernel-source
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export PATH="$GITHUB_WORKSPACE/aosp-clang/bin:$PATH"
+        ln -sf $(which ld.lld) $GITHUB_WORKSPACE/aosp-clang/bin/ld.lld
+        
+        # Configurações oficiais da Motorola para o chip do G42
+        make vendor/bengal_defconfig || make bengal_defconfig || make hawao_defconfig
+        
+        make CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm STRIP=llvm-strip OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc)
+
+    - name: Guardar Kernel Pronto
+      uses: actions/upload-artifact@v4
+      with:
+        name: Kernel_MotoG42_KSU
+        path: kernel-source/arch/arm64/boot/Image
